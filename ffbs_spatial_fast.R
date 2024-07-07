@@ -2,9 +2,9 @@
 
 ff_sp <- function(y_obs, ages, t, n, m0, C0, sigma_e, sigma_w, nu, alpha, beta, gamma, theta){
   ### aux ----
-  A <- kronecker(rep(1, n), alpha)
-  B <- kronecker(rep(1, n), beta)
-  C <- kronecker(theta, gamma)
+  A <- as.matrix(kronecker(rep(1, n), alpha))
+  B <- as.matrix(kronecker(rep(1, n), beta))
+  C <- as.matrix(kronecker(theta, gamma))
   
   ### estimation ----
   #### FF
@@ -16,20 +16,31 @@ ff_sp <- function(y_obs, ages, t, n, m0, C0, sigma_e, sigma_w, nu, alpha, beta, 
   Rt[1] <- C0 + sigma_w ##phiw
   
   ft[,1] <- A + (B * at[1]) + C
-  Qt[,,1] <- Rt[1] * B %*% t(B) + diag(n*ages)*sigma_e #phie
+  #Qt[,,1] <- Rt[1] * B %*% t(B) + diag(n*ages)*sigma_e #phie
+  Qt[,,1] <- Rt[1] * tcrossprod(B, B) + diag(n*ages)*sigma_e #phie
   
-  mt[1] <- at[1] + Rt[1] %*% t(B) %*% solve(Qt[,,1]) %*% (y_obs[,1] - ft[,1])
-  Ct[1] <- Rt[1] - Rt[1] %*% t(B) %*% solve(Qt[,,1]) %*% B %*% Rt[1]
+  #mt[1] <- at[1] + Rt[1] * ( t(B) %*% chol2inv(chol(Qt[,,1])) %*% (y_obs[,1] - ft[,1]) )
+  mt[1] <- at[1] + Rt[1] * ( crossprod(B, chol2inv(chol(Qt[,,1]))) %*% (y_obs[,1] - ft[,1]) )
+  #Ct[1] <- Rt[1] - Rt[1]^2 * ( t(B) %*% chol2inv(chol(Qt[,,1])) %*% B )
+  Ct[1] <- Rt[1] - Rt[1]^2 * ( crossprod(B, chol2inv(chol(Qt[,,1]))) %*% B )
+  
+  ##### FF ta demorando o tempo todo das iteracoes
+  start <- proc.time()[[3]]
   for(k in 2:t){
     at[k] <- nu + mt[k-1]
     Rt[k] <- Ct[k-1] + sigma_w ##phiw
     
     ft[,k] <- A + (B * at[k]) + C
-    Qt[,,k] <- Rt[k] * B %*% t(B) + diag(n*ages)*sigma_e #phie
+    #Qt[,,k] <- Rt[k] * B %*% t(B) + diag(n*ages)*sigma_e #phie
+    Qt[,,k] <- Rt[k] * tcrossprod(B) + diag(n*ages)*sigma_e #phie
     
-    mt[k] <- at[k] + Rt[k] %*% t(B) %*% solve(Qt[,,k]) %*% (y_obs[,k] - ft[,k])
-    Ct[k] <- Rt[k] - Rt[k] %*% t(B) %*% solve(Qt[,,k]) %*% B %*% Rt[k]
+    #mt[k] <- at[k] + Rt[k] * ( t(B) %*% chol2inv(chol(Qt[,,k])) %*% (y_obs[,k] - ft[,k]) )
+    mt[k] <- at[k] + Rt[k] * ( crossprod(B, chol2inv(chol(Qt[,,k]))) %*% (y_obs[,k] - ft[,k]) )
+    #Ct[k] <- Rt[k] - Rt[k]^2 * ( t(B) %*% chol2inv(chol(Qt[,,k])) %*% B )
+    Ct[k] <- Rt[k] - Rt[k]^2 * ( crossprod(B, chol2inv(chol(Qt[,,k]))) %*% B )
   }
+  end <- proc.time()[[3]]
+  end - start
   return(list(mt = mt,
               Ct = Ct,
               Rt = Rt,
@@ -134,9 +145,12 @@ for(k in 1:t){
 
 
 ### estimation (1-step) #kappa ----
+start <- proc.time()[[3]]
 fit <- ffbs_sp(y_obs = y_obs, ages = ages, t = t, n = n, m0 = m0, C0 = C0,
                sigma_e = sigma_e, sigma_w = sigma_w, nu = nu, alpha = alpha,
                beta = beta, gamma = gamma, theta = theta)
+end <- proc.time()[[3]]
+end - start ## seconds
 
 plot(1:t, kappa)
 lines(1:t, fit$kappa.bs)
@@ -144,6 +158,7 @@ lines(1:t, fit$kappa.bs)
 
 ### estimation (n-steps) #age-time parameters (after filtering) ----
 M = 10000 #iterations
+M = 3000 #~3h por 3000 it
 kappa.chain <- matrix(NA, nrow = M, ncol = t)
 
 alpha.chain <- matrix(NA, nrow = M, ncol = ages)
@@ -167,9 +182,15 @@ sigma_e.chain[1] <- 1
 nu.chain[1] <- runif(1, -1, 1)
 
 ## gibbs
-start <- proc.time()[[3]]
+#start <- proc.time()[[3]]
+## Progress Bar
+pb  = progress::progress_bar$new(format = "Simulating [:bar] :percent in :elapsed",total = M, clear = FALSE, width = 60)
+pb$tick()
+
 set.seed(16)
 for(i in 2:M){
+  
+  pb$tick()
   
   ### kappa
   fit <- ffbs_sp(y_obs = y_obs, ages = ages, t = t, n = n, m0 = m0, C0 = C0,
@@ -191,10 +212,10 @@ for(i in 2:M){
   C <- matrix(kronecker(theta, gamma.chain[i-1, ]))
   
   aux <- sum( (y_obs - A[, rep(1, t)] - (B %*% kappa.chain[i,]) - C[, rep(1, t)])^2 )
-  sigma_e.chain[i] <- invgamma::rinvgamma(1, 0.01 + t*n*ages/2, rate = 0.01 + aux/2) ##gerar fixando idade?
-  ### informative priors - gamma(a, b), a = 0.01, b = 0.01
+  sigma_e.chain[i] <- invgamma::rinvgamma(1, t*n*ages/2, rate = aux/2) ##gerar fixando idade?
+  ### vague priors
   
-  ### alpha, beta and gamma  (alpha e beta estao se perdendo!)
+  ### alpha, beta and gamma 
   for (j in 1:ages) {
     Y.aux <- c( y_obs[j, ] )
     for(k in 2:n){
@@ -220,7 +241,7 @@ for(i in 2:M){
   
   ### sigma_w
   aux <- sum( (kappa.chain[i, 2:t] - nu.chain[i-1] - kappa.chain[i, 1:(t-1)])^2 ) ## years
-  sigma_w.chain[i] <- invgamma::rinvgamma(1, 0.01 + (t-1)/2, rate = 0.01 + aux/2)
+  sigma_w.chain[i] <- invgamma::rinvgamma(1, (t-1)/2, rate = aux/2)
   ### informative priors - gamma(a, b), a = 0.01, b = 0.01
   
   ### nu
@@ -229,12 +250,14 @@ for(i in 2:M){
   nu.chain[i] <- rnorm(1, aux.2, sqrt(aux))
   
 }
-end <- proc.time()[[3]]
-end - start ## seconds
+# end <- proc.time()[[3]] 
+# end - start ## seconds
 
 ### chain treatment
 bn = 5000
+bn = 1000
 thin = 5
+thin = 1
 it = M
 kappa.est <- apply(kappa.chain[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975), na.rm = T)
 
@@ -249,25 +272,26 @@ nu.est <- quantile(nu.chain[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
 #### age-time parameters plot
 x11()
 par(mfrow = c(2,2))
-plot(1:10, kappa)
-lines(1:10, kappa.est[2,])
-lines(1:10, kappa.est[1,], lty = 2, col = "blue")
-lines(1:10, kappa.est[3,], lty = 2, col = "blue")
+plot(1:t, kappa)
+lines(1:t, kappa.est[2,])
+lines(1:t, kappa.est[1,], lty = 2, col = "blue")
+lines(1:t, kappa.est[3,], lty = 2, col = "blue")
 
-plot(1:20, alpha)
-lines(1:20, alpha.est[2,])
-lines(1:20, alpha.est[1,], lty = 2, col = "blue")
-lines(1:20, alpha.est[3,], lty = 2, col = "blue")
+plot(1:ages, alpha)
+lines(1:ages, alpha.est[2,])
+lines(1:ages, alpha.est[1,], lty = 2, col = "blue")
+lines(1:ages, alpha.est[3,], lty = 2, col = "blue")
 
-plot(1:20, beta)
-lines(1:20, beta.est[2,])
-lines(1:20, beta.est[1,], lty = 2, col = "blue")
-lines(1:20, beta.est[3,], lty = 2, col = "blue")
+plot(1:ages, beta)
+lines(1:ages, beta.est[2,])
+lines(1:ages, beta.est[1,], lty = 2, col = "blue")
+lines(1:ages, beta.est[3,], lty = 2, col = "blue")
 
-plot(1:20, gamma)
-lines(1:20, gamma.est[2,])
-lines(1:20, gamma.est[1,], lty = 2, col = "blue")
-lines(1:20, gamma.est[3,], lty = 2, col = "blue")
+plot(1:ages, gamma)
+lines(1:ages, gamma.est[2,])
+lines(1:ages, gamma.est[1,], lty = 2, col = "blue")
+lines(1:ages, gamma.est[3,], lty = 2, col = "blue")
+### pfto
 
 plot.ts(kappa.chain[seq(bn, it, by = thin), 1])
 plot.ts(kappa.chain[seq(bn, it, by = thin) ,4])
@@ -309,7 +333,7 @@ acf(gamma.chain[bn:M, 4])
 acf(gamma.chain[bn:M, 12])
 acf(gamma.chain[bn:M, 20])
 graphics.off()
-
+## pfto
 
 nu.est
 sigma_w.est
@@ -326,6 +350,7 @@ abline(h = sigma_e, col = 2)
 acf(nu.chain[bn:M])
 acf(sigma_w.chain[bn:M])
 acf(sigma_e.chain[bn:M])
+### melhor.... mas msm assim....
 
 ### estimation (n-steps) #error parameters (after filtering) ----
 it = 10000 #iterations
