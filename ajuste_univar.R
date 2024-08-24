@@ -57,6 +57,9 @@ set.seed(14)
 fit.sap <- blc(y, M = 10000)
 plot(fit.sap)
 plot(fit.sap, parameter = "fitted", age = as.integer(seq(20,80, by = 5)))
+saveRDS(list(alp = apply(fit.sap$alpha, 1, mean),
+             bet = apply(fit.sap$beta, 1, mean)), "sim_ab.RDS")
+
 ## satisfatório
 
 

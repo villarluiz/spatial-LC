@@ -70,3 +70,7 @@ microbenchmark(ff1(t),
 
 ### FF1 mais rapido, seguido por FF3 e FF2 na media
 ### FF1, FF2 e FF3 na mediana
+
+
+### TESTAR PACOTE FKF (fast kalman filter)
+library(FKF)
