@@ -1,0 +1,301 @@
+---
+title: "sblc_versus_blc"
+author: "LabMA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+library(sf)
+library(spdep)
+library(tidyverse)
+library(ggplot2)
+library(BayesMortalityPlus)
+library(plotly)
+
+#rj_mun <- st_read("RJ_Municipios_2022/RJ_Municipios_2022.shp")
+rj_micro <- st_read("RJ_Microrregioes_2022/RJ_Microrregioes_2022.shp")
+#plot(rj_mun[,c(2,5)])
+plot(rj_micro[,c(2,5)])
+
+shape_aisp_nb_val <- st_make_valid(rj_micro[,c(2,5)])
+nb <- poly2nb(shape_aisp_nb_val, queen=TRUE)
+
+# matriz de vizinhaça
+W <- nb2mat(nb, style="B", zero.policy = TRUE)
+M <- diag(rowSums(W))
+
+ages <- 13  ## idades    20-24, 25-29, ..., 80+
+t <- 42  ## tempo
+n <- 18   ## regioes
+
+it = 20000 #iterations
+bn = 10000
+thin = 4
+
+m0 <- 0; C0 <- 10
+
+### y_obs
+y <- matrix(NA, nrow = ages*n, ncol = t)
+for(i in 1:t){
+  aux <- i + 1979
+  mx <- as.data.frame(read.table(paste0("Dados_microrregioes/det/logmx_det/logmx_", as.character(aux), ".txt")))[,-1] %>%
+    stack()
+  y[,i] <- mx$values
+}
+ind <- as.character(mx$ind)
+
+### missing data input (interpolando no ano, nao no espaço)
+y_treat <- t(zoo::na.approx(t(y)))
+y_treat[92, 42] <- y_treat[92, 41] ## repetindo valor do ultimo ano (2021) pq nao tem como interpolar
+
+
+#### gerar y_ts
+source("fitted_sblc.R")
+fit <- readRDS("rj_micro_fit.RDS")
+fit2 <- readRDS("rj_micro_fit2_full.RDS")
+```
+
+
+# {.tabset}
+
+## Residuals {.tabset}
+
+### Rio de Janeiro
+```{r}
+fitted <- fitted_sblc(fit)
+
+aux.qx <- 1 - exp(-exp(fitted$mean))
+y_qx <- 1 - exp(-exp(y_treat))
+res <- ( (y_qx - aux.qx)^2)/aux.qx
+colnames(res) <- 1980:2021
+
+res_sblc <- res[which(ind == "X33018.RIO.DE.JANEIRO"),]
+
+
+fitted2 <- fitted_sblc(fit2)
+
+aux.qx <- 1 - exp(-exp(fitted2$mean))
+res2 <- ( (y_qx - aux.qx)^2)/aux.qx
+colnames(res2) <- 1980:2021
+
+res2_sblc <- res2[which(ind == "X33018.RIO.DE.JANEIRO"),]
+
+
+fit_rj <- readRDS("rj_fit_mar.RDS")
+
+fitted_mar <- fitted(fit_rj)
+y2_qx <- 1 - exp(-exp(fit_rj$Y))
+
+res_mar <- ((y2_qx - fitted_mar$mean)^2)/fitted_mar$mean
+
+
+aux <- rbind(res2_sblc, res_sblc, res_mar)
+
+as.data.frame(aux) %>% cbind(age = rep(1:13, 3), id = rep(1:3, each = 13)) %>%
+  pivot_longer(1:42) %>%
+  ggplot() +
+  geom_tile(aes(x = name, y = age, fill = log(value, base = 10))) +
+  facet_wrap(~id, ncol = 3, labeller = labeller(id = c("1" = "SBLC new",
+                                                       "2" = "SBLC old",
+                                                       "3" = "BLC"))) +
+  scale_fill_gradient2(low = "white", mid = "yellow", high = "red4", midpoint = -7)
+```
+
+
+### Sta. Maria Madalena
+```{r}
+
+res_sblc <- res[which(ind == "X33008.SANTA.MARIA.MADALENA"),]
+
+res2_sblc <- res2[which(ind == "X33008.SANTA.MARIA.MADALENA"),]
+
+
+fit_smm <- readRDS("smm_fit_mar.RDS")
+
+fitted_mar <- fitted(fit_smm)
+y2_qx <- 1 - exp(-exp(fit_smm$Y))
+
+res_mar <- ((y2_qx - fitted_mar$mean)^2)/fitted_mar$mean
+
+aux <- rbind(res2_sblc, res_sblc, res_mar)
+
+as.data.frame(aux) %>% cbind(age = rep(1:13, 3), id = rep(1:3, each = 13)) %>%
+  pivot_longer(1:42) %>%
+  ggplot() +
+  geom_tile(aes(x = name, y = age, fill = log(value, base = 10))) +
+  facet_wrap(~id, ncol = 3, labeller = labeller(id = c("1" = "SBLC new",
+                                                       "2" = "SBLC old",
+                                                       "3" = "BLC"))) +
+  scale_fill_gradient2(low = "white", mid = "yellow", high = "red4", midpoint = -7)
+
+
+```
+
+## Parameters (alpha, beta, kappa, gamma) {.tabset}
+
+### alpha
+```{r}
+sig = 1 - 0.95
+age = 1:13
+
+## RJ
+alpha.est <- apply(fit_rj$alpha, 1, mean)
+alpha.inf <- apply(fit_rj$alpha, 1, quantile, sig/2)
+alpha.sup <- apply(fit_rj$alpha, 1, quantile, 1 - sig/2)
+alpha.lim <- range(c(alpha.inf, alpha.sup))
+dt_rj = data.frame(x = age, fitted = alpha.est, lim.inf = alpha.inf, lim.sup = alpha.sup)
+
+##SMM
+alpha.est2 <- apply(fit_smm$alpha, 1, mean)
+alpha.inf2 <- apply(fit_smm$alpha, 1, quantile, sig/2)
+alpha.sup2 <- apply(fit_smm$alpha, 1, quantile, 1 - sig/2)
+alpha.lim2 <- range(c(alpha.inf2, alpha.sup2))
+dt_smm = data.frame(x = age, fitted = alpha.est2, lim.inf = alpha.inf2, lim.sup = alpha.sup2)
+
+##SBLC
+alpha.est3 <- apply(fit$alpha.chain, 2, mean)
+alpha.inf3 <- apply(fit$alpha.chain, 2, quantile, sig/2)
+alpha.sup3 <- apply(fit$alpha.chain, 2, quantile, 1 - sig/2)
+alpha.lim3 <- range(c(alpha.inf3, alpha.sup3))
+dt_sblc = data.frame(x = age, fitted = alpha.est3, lim.inf = alpha.inf3, lim.sup = alpha.sup3)
+
+##SBLC2
+alpha.est3 <- apply(fit2$alpha.chain, 2, mean)
+alpha.inf3 <- apply(fit2$alpha.chain, 2, quantile, sig/2)
+alpha.sup3 <- apply(fit2$alpha.chain, 2, quantile, 1 - sig/2)
+alpha.lim3 <- range(c(alpha.inf3, alpha.sup3))
+dt2_sblc = data.frame(x = age, fitted = alpha.est3, lim.inf = alpha.inf3, lim.sup = alpha.sup3)
+
+   ggplotly(ggplot(data = dt_rj) +
+      geom_ribbon(aes(x = x, ymin = lim.inf, ymax = lim.sup, fill = "RJ"), alpha = 0.5) +
+      geom_line(aes(x = x, y = fitted, col = "RJ")) +
+      
+      geom_ribbon(data = dt_smm, aes(x = x, ymin = lim.inf, ymax = lim.sup, fill = "SMM"), alpha = 0.5) +
+      geom_line(data = dt_smm, aes(x = x, y = fitted, col = "SMM")) +
+      
+      geom_ribbon(data = dt_sblc, aes(x = x, ymin = lim.inf, ymax = lim.sup, fill = "SBLC old"), alpha = 0.5) +
+      geom_line(data = dt_sblc, aes(x = x, y = fitted, col = "SBLC old")) +
+      
+            geom_ribbon(data = dt2_sblc, aes(x = x, ymin = lim.inf, ymax = lim.sup, fill = "SBLC new"), alpha = 0.5) +
+      geom_line(data = dt2_sblc, aes(x = x, y = fitted, col = "SBLC new")) +
+      
+      xlab("x") + ylab("alpha") + theme_bw() +
+      theme(axis.title.x = ggplot2::element_text(color = 'black', size = 13),
+            axis.title.y = ggplot2::element_text(color = 'black', size = 13))+
+      scale_color_manual(values = rainbow(4)) +
+      scale_fill_manual(values = rainbow(4)))
+```
+
+
+### beta
+```{r}
+sig = 1 - 0.95
+age = 1:13
+
+## RJ
+alpha.est <- apply(fit_rj$beta, 1, mean)
+alpha.inf <- apply(fit_rj$beta, 1, quantile, sig/2)
+alpha.sup <- apply(fit_rj$beta, 1, quantile, 1 - sig/2)
+alpha.lim <- range(c(alpha.inf, alpha.sup))
+dt_rj = data.frame(x = age, fitted = alpha.est, lim.inf = alpha.inf, lim.sup = alpha.sup)
+
+##SMM
+alpha.est2 <- apply(fit_smm$beta, 1, mean)
+alpha.inf2 <- apply(fit_smm$beta, 1, quantile, sig/2)
+alpha.sup2 <- apply(fit_smm$beta, 1, quantile, 1 - sig/2)
+alpha.lim2 <- range(c(alpha.inf2, alpha.sup2))
+dt_smm = data.frame(x = age, fitted = alpha.est2, lim.inf = alpha.inf2, lim.sup = alpha.sup2)
+
+##SBLC
+alpha.est3 <- apply(fit$beta.chain, 2, mean)
+alpha.inf3 <- apply(fit$beta.chain, 2, quantile, sig/2)
+alpha.sup3 <- apply(fit$beta.chain, 2, quantile, 1 - sig/2)
+alpha.lim3 <- range(c(alpha.inf3, alpha.sup3))
+dt_sblc = data.frame(x = age, fitted = alpha.est3, lim.inf = alpha.inf3, lim.sup = alpha.sup3)
+
+##SBLC
+alpha.est3 <- apply(fit2$beta.chain, 2, mean)
+alpha.inf3 <- apply(fit2$beta.chain, 2, quantile, sig/2)
+alpha.sup3 <- apply(fit2$beta.chain, 2, quantile, 1 - sig/2)
+alpha.lim3 <- range(c(alpha.inf3, alpha.sup3))
+dt2_sblc = data.frame(x = age, fitted = alpha.est3, lim.inf = alpha.inf3, lim.sup = alpha.sup3)
+
+    ggplotly(ggplot(data = dt_rj) +
+      geom_ribbon(aes(x = x, ymin = lim.inf, ymax = lim.sup, fill = "RJ"), alpha = 0.5) +
+      geom_line(aes(x = x, y = fitted, col = "RJ")) +
+      
+      geom_ribbon(data = dt_smm, aes(x = x, ymin = lim.inf, ymax = lim.sup, fill = "SMM"), alpha = 0.5) +
+      geom_line(data = dt_smm, aes(x = x, y = fitted, col = "SMM")) +
+      
+      geom_ribbon(data = dt_sblc, aes(x = x, ymin = lim.inf, ymax = lim.sup, fill = "SBLC old"), alpha = 0.5) +
+      geom_line(data = dt_sblc, aes(x = x, y = fitted, col = "SBLC old")) +
+      
+            geom_ribbon(data = dt2_sblc, aes(x = x, ymin = lim.inf, ymax = lim.sup, fill = "SBLC new"), alpha = 0.5) +
+      geom_line(data = dt2_sblc, aes(x = x, y = fitted, col = "SBLC new")) +
+      
+      geom_hline(yintercept = 0, col = "black", lty = 2) +
+      
+      xlab("x") + ylab("beta") + theme_bw() +
+      theme(axis.title.x = ggplot2::element_text(color = 'black', size = 13),
+            axis.title.y = ggplot2::element_text(color = 'black', size = 13))+
+      scale_color_manual(values = rainbow(4)) +
+      scale_fill_manual(values = rainbow(4)))
+```
+
+
+### kappa
+```{r}
+sig = 1 - 0.95
+year = 1:42
+
+## RJ
+alpha.est <- apply(fit_rj$kappa, 1, mean)
+alpha.inf <- apply(fit_rj$kappa, 1, quantile, sig/2)
+alpha.sup <- apply(fit_rj$kappa, 1, quantile, 1 - sig/2)
+alpha.lim <- range(c(alpha.inf, alpha.sup))
+dt_rj = data.frame(x = year, fitted = alpha.est, lim.inf = alpha.inf, lim.sup = alpha.sup)
+
+##SMM
+alpha.est2 <- apply(fit_smm$kappa, 1, mean)
+alpha.inf2 <- apply(fit_smm$kappa, 1, quantile, sig/2)
+alpha.sup2 <- apply(fit_smm$kappa, 1, quantile, 1 - sig/2)
+alpha.lim2 <- range(c(alpha.inf2, alpha.sup2))
+dt_smm = data.frame(x = year, fitted = alpha.est2, lim.inf = alpha.inf2, lim.sup = alpha.sup2)
+
+##SBLC
+alpha.est3 <- apply(fit$kappa.chain, 2, mean)
+alpha.inf3 <- apply(fit$kappa.chain, 2, quantile, sig/2)
+alpha.sup3 <- apply(fit$kappa.chain, 2, quantile, 1 - sig/2)
+alpha.lim3 <- range(c(alpha.inf3, alpha.sup3))
+dt_sblc = data.frame(x = year, fitted = alpha.est3, lim.inf = alpha.inf3, lim.sup = alpha.sup3)
+
+##SBLC2
+alpha.est3 <- apply(fit2$kappa.chain, 2, mean)
+alpha.inf3 <- apply(fit2$kappa.chain, 2, quantile, sig/2)
+alpha.sup3 <- apply(fit2$kappa.chain, 2, quantile, 1 - sig/2)
+alpha.lim3 <- range(c(alpha.inf3, alpha.sup3))
+dt2_sblc = data.frame(x = year, fitted = alpha.est3, lim.inf = alpha.inf3, lim.sup = alpha.sup3)
+
+    ggplotly(ggplot(data = dt_rj) +
+      geom_ribbon(aes(x = x, ymin = lim.inf, ymax = lim.sup, fill = "RJ"), alpha = 0.5) +
+      geom_line(aes(x = x, y = fitted, col = "RJ")) +
+      
+      geom_ribbon(data = dt_smm, aes(x = x, ymin = lim.inf, ymax = lim.sup, fill = "SMM"), alpha = 0.5) +
+      geom_line(data = dt_smm, aes(x = x, y = fitted, col = "SMM")) +
+      
+      geom_ribbon(data = dt_sblc, aes(x = x, ymin = lim.inf, ymax = lim.sup, fill = "SBLC old"), alpha = 0.5) +
+      geom_line(data = dt_sblc, aes(x = x, y = fitted, col = "SBLC old")) +
+      
+            geom_ribbon(data = dt2_sblc, aes(x = x, ymin = lim.inf, ymax = lim.sup, fill = "SBLC new"), alpha = 0.5) +
+      geom_line(data = dt2_sblc, aes(x = x, y = fitted, col = "SBLC new")) +
+      
+      xlab("x") + ylab("kappa") + theme_bw() +
+      theme(axis.title.x = ggplot2::element_text(color = 'black', size = 13),
+            axis.title.y = ggplot2::element_text(color = 'black', size = 13))+
+      scale_color_manual(values = rainbow(4)) +
+      scale_fill_manual(values = rainbow(4)))
+```
+

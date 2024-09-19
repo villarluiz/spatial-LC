@@ -10,6 +10,7 @@ shape_aisp_nb_val <- st_make_valid(rj_micro[,c(2,5)])
 nb <- poly2nb(shape_aisp_nb_val, queen=TRUE)
 
 # matriz de vizinhaça
+
 W <- nb2mat(nb, style="B", zero.policy = TRUE)
 
 data_ob <- read.table("Dados_microrregioes/obt_OPS/obt_2022.txt", sep = ";")

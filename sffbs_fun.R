@@ -19,7 +19,7 @@ ff_sp <- function(y_obs, ages, t, n, m0, C0, sigma_e, sigma_w, nu, alpha, beta, 
   Qt[,,1] <- Rt[1] * tcrossprod(B) + diag(n*ages)*sigma_e #phie
   
   #mt[1] <- at[1] + Rt[1] * ( t(B) %*% chol2inv(chol(Qt[,,1])) %*% (y_obs[,1] - ft[,1]) )
-  aux <- t(B) %*% chol2inv(chol(Qt[,,1]))
+  aux <- t(B) %*% Matrix::chol2inv(Matrix::chol(Qt[,,1]))
   mt[1] <- at[1] + Rt[1] * ( aux %*% (y_obs[,1] - ft[,1]) )
   #Ct[1] <- Rt[1] - Rt[1]^2 * ( t(B) %*% chol2inv(chol(Qt[,,1])) %*% B )
   Ct[1] <- Rt[1] - Rt[1]^2 * ( aux %*% B )
@@ -31,13 +31,10 @@ ff_sp <- function(y_obs, ages, t, n, m0, C0, sigma_e, sigma_w, nu, alpha, beta, 
     Rt[k] <- Ct[k-1] + sigma_w ##phiw
     
     ft[,k] <- A + (B * at[k]) + C
-    #Qt[,,k] <- Rt[k] * B %*% t(B) + diag(n*ages)*sigma_e #phie
     Qt[,,k] <- Rt[k] * tcrossprod(B) + diag(n*ages)*sigma_e #phie
     
-    #mt[k] <- at[k] + Rt[k] * ( t(B) %*% chol2inv(chol(Qt[,,k])) %*% (y_obs[,k] - ft[,k]) )
-    aux <- t(B) %*% chol2inv(chol(Qt[,,k]))
+    aux <- t(B) %*% Matrix::chol2inv(Matrix::chol(Qt[,,k]))
     mt[k] <- at[k] + Rt[k] * ( aux %*% (y_obs[,k] - ft[,k]) )
-    #Ct[k] <- Rt[k] - Rt[k]^2 * ( t(B) %*% chol2inv(chol(Qt[,,k])) %*% B )
     Ct[k] <- Rt[k] - Rt[k]^2 * ( aux %*% B )
   }
   end <- proc.time()[[3]]
@@ -68,14 +65,14 @@ bs_sp <- function(mt, Ct, at, Rt, m0, C0){
     kappa.bs[k] <- rnorm(1, st[k], sqrt(St[k]))
   }
   
-  Bt = C0 * 1/Rt[1]
-  s0 <- m0 + Bt %*% (kappa.bs[1] - at[1])
-  S0 <- C0 - Bt * Rt[1] * t(Bt)
-  
-  kappa0.bs <- rnorm(1, s0, sqrt(S0))
+  # Bt = C0 * 1/Rt[1]
+  # s0 <- m0 + Bt %*% (kappa.bs[1] - at[1])
+  # S0 <- C0 - Bt * Rt[1] * t(Bt)
+  # 
+  # kappa0.bs <- rnorm(1, s0, sqrt(S0))
   
   return(list(kappa.bs = kappa.bs,
-              kappa0.bs = kappa0.bs,
+              #kappa0.bs = kappa0.bs,
               st = st,
               St = St))
 }

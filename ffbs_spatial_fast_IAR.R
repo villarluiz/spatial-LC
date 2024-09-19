@@ -119,39 +119,46 @@ Mi <- diag(rowSums(Wi))
 Qi = Mi - Wi
 Qii = Qi[1:(n-1), 1:(n-1)]
 
-sigma_t = 0.5
+sigma_t = 6
 set.seed(14)
 theta <- MASS::mvrnorm(n = 1, mu = rep(0, n-1), Sigma = chol2inv(chol(Qii))*sigma_t) 
 theta_n <- rnorm(1, sum( (Wi[n, -n]/Mi[n,n])*theta[-n] ), sqrt(sigma_t/Mi[n,n]))
 theta <- c(theta, theta_n)
-theta <- theta - mean(theta)
 ### alpha, beta and kappa ----
 ## acho que tem constraint demais...
 set.seed(14)
-# alpha <- runif(ages, -1, 1)
-alpha <- readRDS("sim_ab.RDS")$alp
+alpha <- runif(ages, -6, -1)
+#alpha <- readRDS("sim_ab.RDS")$alp
 # #alpha <- alpha/sum(alpha)
-# beta <- runif(ages, -1, 1)
-beta <- readRDS("sim_ab.RDS")$bet
-beta <- beta/sum(beta)
-gamma <- runif(ages, 0, 0.01)
-gamma <- gamma/sum(gamma)
-kappa0 <- 1
+beta <- runif(ages, 0, 0.1)
+#beta <- readRDS("sim_ab.RDS")$bet
+gamma <- runif(ages, 0, 0.1)
+#beta <- beta/sum(beta)
+
+
+
+kappa0 <- 10
 kappa <- rep(NA, t)
-nu <- -0.7
+nu <- -0.95
 
 set.seed(14)
-kappa[1] <- nu + kappa0 + rnorm(1, 0, sqrt(0.025)) 
+kappa[1] <- nu + kappa0 + rnorm(1, 0, sqrt(0.35)) 
 for(k in 2:t){
-  kappa[k] <- nu + kappa[k-1] + rnorm(1, 0, sqrt(0.025))
+  kappa[k] <- nu + kappa[k-1] + rnorm(1, 0, sqrt(0.35))
 }
-aux.k <- c(kappa0, kappa)
-aux.k <- aux.k - mean(aux.k)
-kappa <- aux.k[2:(t+1)]; kappa0 <- aux.k[1]
 
-m0 <- 0; C0 <- 10
-sigma_e = 0.05
-sigma_w = 0.025
+alpha <- alpha + beta*mean(kappa) + gamma*mean(theta)
+theta <- (theta - mean(theta))*sum(gamma)
+#inclination <- (kappa[1] - kappa[t])/(t-1)
+kappa <- (kappa - mean(kappa))*sum(beta)
+#kappa <- aux.k[2:(t+1)]; kappa0 <- aux.k[1]
+beta <- beta/sum(beta)
+gamma <- gamma/sum(gamma)
+
+
+m0 <- 0; C0 <- 100
+sigma_e = runif(ages, min = 0, max = 1)
+sigma_w = 0.35
 
 ### aux ----
 A <- kronecker(rep(1, n), alpha)
@@ -160,7 +167,7 @@ C <- kronecker(theta, gamma)
 set.seed(14)
 y_obs <- matrix(NA, nrow = ages*n, ncol = t)
 for(k in 1:t){
-  y_obs[,k] <- A + (B * kappa[k]) + C + rnorm(n*ages, 0, sd = sqrt(0.05))
+  y_obs[,k] <- A + (B * kappa[k]) + C + rnorm(n*ages, 0, sd = sqrt(sigma_e))
 }
 
 ##
@@ -186,32 +193,25 @@ kappa.chain <- matrix(NA, nrow = it, ncol = t)
 alpha.chain <- matrix(NA, nrow = it, ncol = ages)
 beta.chain <- matrix(NA, nrow = it, ncol = ages)
 gamma.chain <- matrix(NA, nrow = it, ncol = ages)
+sigma_e.chain <- matrix(NA, nrow = it, ncol = ages)
 
 theta.chain <- matrix(NA, nrow = it, ncol = n)
 
 sigma_w.chain <- rep(NA, it)
-sigma_e.chain <- rep(NA, it)
 sigma_t.chain <- rep(NA, it)
 #lambda.chain <- rep(NA, it)
 nu.chain <- rep(NA, it)
 
 ## starters
 alpha.chain[1, ] <- runif(ages)
-#alpha.chain[1, ] <- alpha.chain[1, ]/sum(alpha.chain[1, ])
 beta.chain[1, ] <- runif(ages)
-beta.chain[1, ] <- beta.chain[1, ]/sum(beta.chain[1, ])
 gamma.chain[1, ] <- runif(ages)
-gamma.chain[1, ] <- gamma.chain[1, ]/sum(gamma.chain[1, ])
 
-theta.chain[1, ] <- theta    ### theta = 1 1 1 causou instabilidade
+theta.chain[1, ] <- runif(n)    ### theta = 1 1 1 causou instabilidade
 
 sigma_w.chain[1] <- 1
-sigma_e.chain[1] <- 1
+sigma_e.chain[1, ] <- rep(1, ages)
 sigma_t.chain[1] <- 1
-
-#lambda.min <- 1/min(labda.dom.i$values); lambda.max <- 1/max(labda.dom.i$values)
-#lambda.chain[1] <- runif(1, lambda.min, lambda.max)
-#lambda.chain[1] = lambda
 
 nu.chain[1] <- runif(1, -1, 1)
 
@@ -239,28 +239,52 @@ for(i in 2:it){
   #kappa.chain[i,] <- kappa.chain[i, ] - mean(kappa.chain[i, ])
   kappa.chain[i,] <- kappa
   
-  ### sigma_e
-  A <- matrix(kronecker(rep(1, n), alpha.chain[i-1, ]))
-  B <- matrix(kronecker(rep(1, n), beta.chain[i-1, ]))
-  C <- matrix(kronecker(theta.chain[i-1, ], gamma.chain[i-1, ]))
-  #C <- matrix(kronecker(theta, gamma.chain[i-1, ]))
+  ### CONSTRAINTS
+  level <- mean(kappa.chain[i,])
+  incline <- 1/sum(beta.chain[i-1,])
+  #incline <- (kappa.chain[i,1] - kappa.chain[i,t]) / (t - 1)
   
-  aux <- sum( (y_obs - A[, rep(1, t)] - (B %*% kappa.chain[i,]) - C[, rep(1, t)])^2 )
-  sigma_e.chain[i] <- invgamma::rinvgamma(1, t*n*ages/2, rate = aux/2) ##gerar fixando idade?
+  #kappa.chain[i,] <- (kappa.chain[i, ] - level) / incline
+  
+  level2 <- mean(theta.chain[i-1,])
+  incline2 <- 1/sum(gamma.chain[i-1,])
+  
+  theta.chain[i-1,] <- (theta.chain[i-1,] - level2) / incline2
+  
+  alpha.chain[i-1,] <- alpha.chain[i-1,] + (beta.chain[i-1,] * level) + (gamma.chain[i-1,] * level2)
+  beta.chain[i-1,] <- beta.chain[i-1,] * incline
+  gamma.chain[i-1,] <- gamma.chain[i-1,] * incline2
+  
+  
+  
+  ### SIGMA_E
+  # A <- matrix(kronecker(rep(1, n), alpha.chain[i-1, ]))
+  # B <- matrix(kronecker(rep(1, n), beta.chain[i-1, ]))
+  # C <- matrix(kronecker(theta.chain[i-1, ], gamma.chain[i-1, ]))
+  # 
+  # aux <- sum( (y_obs - A[, rep(1, t)] - (B %*% kappa.chain[i, ]) - C[, rep(1, t)])^2 )
+  # sigma_e.chain[i] <- invgamma::rinvgamma(1, t*n*ages/2, rate = aux/2) 
   ### informative priors - gamma(a, b), a = 0.01, b = 0.01
   
-  ### alpha, beta and gamma 
+  ### ALPHA, BETA AND GAMMA
   for (j in 1:ages) {
     Y.aux <- c( y_obs[j, ] )
     for(k in 2:n){
       Y.aux <- c( Y.aux, y_obs[( j + (ages * (k-1)) ), ] )
     }
     
-    X <- cbind(1, rep(kappa.chain[i,], n), rep(theta.chain[i-1, ], each = t))
-    #X <- cbind(1, rep(kappa.chain[i,], n), rep(theta, each = t))
+    A <- rep(alpha.chain[i-1, j], n*t)
+    B <- rep(beta.chain[i-1, j] * kappa.chain[i,], n)
+    C <- rep(gamma.chain[i-1, j] * theta.chain[i-1,], t)
+    
+    aux <- sum( (Y.aux - A - B - C)^2 )
+    sigma_e.chain[i, j] <- invgamma::rinvgamma(1, t*n/2, rate = aux/2)
+    
+    
+    X <- cbind(1, rep(kappa.chain[i, ], n), rep(theta.chain[i-1, ], each = t))
     aux.reg <- chol2inv(chol(t(X) %*% X))
     mean.reg <- aux.reg %*% t(X) %*% matrix(Y.aux)
-    var.reg <- sigma_e.chain[i] * aux.reg
+    var.reg <- sigma_e.chain[i, j] * aux.reg
     
     tmp <- MASS::mvrnorm(1, mean.reg, var.reg)
     
@@ -269,52 +293,47 @@ for(i in 2:it){
     gamma.chain[i, j] <- tmp[3]
   }
   
-  ### alpha, beta & gamma constraint
-  #alpha.chain[i, ] <- alpha.chain[i, ]/sum(alpha.chain[i, ])
-  beta.chain[i, ] <- beta.chain[i, ]/sum(beta.chain[i, ])
-  gamma.chain[i, ] <- gamma.chain[i, ]/sum(gamma.chain[i, ])
+  ### BETA & GAMMA CONSTRAINT
+  # beta.chain[i, ] <- beta.chain[i, ]/sum(beta.chain[i, ])
+  # gamma.chain[i, ] <- gamma.chain[i, ]/sum(gamma.chain[i, ])
   
-  ### sigma_w
+  ### SIGMA_W
   aux <- sum( (kappa.chain[i, 2:t] - nu.chain[i-1] - kappa.chain[i, 1:(t-1)])^2 ) ## years
   sigma_w.chain[i] <- invgamma::rinvgamma(1, (t-1)/2, rate = aux/2)
   ### informative priors - gamma(a, b), a = 0.01, b = 0.01
   
-  ### nu
+  ### NU
   aux <- sigma_w.chain[i]/(t-1)
   aux.2 <- (kappa.chain[i, t] - kappa.chain[i, 1])/(t-1)
   nu.chain[i] <- rnorm(1, aux.2, sqrt(aux))
-  #nu.chain[i] <- nu
+  #nu.chain[i] <- -0.95
   
-  ### sigma_t
-  #aux <- Mi - lambda.chain[i-1]*Wi
+  ### SIGMA_T
   aux <- Mi - Wi
   aux.2 <- theta.chain[i-1, ] %*% aux %*% matrix(theta.chain[i-1, ])
-  #aux.2 <- theta %*% aux %*% matrix(theta)
   sigma_t.chain[i] <- invgamma::rinvgamma(1, (n-1)/2, rate = aux.2/2)
-  ### um pouco esquisito valores mt altos surgirem da estimacao
   
-  ### theta_q 
+  ### THETA_q
   for(j in 1:n){
     mu0 = sum( (Wi[j, -j]/Mi[j,j])*theta.chain[i-1, -j] )
-    ### é a de cima menos lambda
-    #mu0 = sum( Wi[j, -j] * (theta.chain[i-1, j] - theta.chain[i-1, -j])^2 ) 
     sigma0 = sigma_t.chain[i]/Mi[j,j]
-    #sigma0 = sigma_t.chain[i]
     
-    y.hat = ( y_obs[1:ages + ages*(j-1), ] - (matrix(beta.chain[i,]) %*% kappa.chain[i,]) - matrix(alpha.chain[i,],
-                                                                                         nrow = ages,
-                                                                                         ncol = t) )
     
-    aux = ( sigma0*(t*sum(gamma.chain[i,]^2)) + sigma_e.chain[i] )
-    aux.2 = y.hat*matrix(gamma.chain[i,], nrow = ages, ncol = t)
-    mu1 = ( sigma0*sum(aux.2) + sigma_e.chain[i]*mu0 )/aux
-    sigma1 = (sigma_e.chain[i]*sigma0)/aux
+    y.hat = ( y_obs[1:ages + ages*(j-1), ] - (matrix(beta.chain[i,]) %*% kappa.chain[i, ]) - matrix(alpha.chain[i,],
+                                                                                                    nrow = ages,
+                                                                                                    ncol = t) )
+    
+    #aux = ( sigma0*(t*sum(gamma.chain[i,]^2)) + sigma_e.chain[i] )
+    aux = ( sigma0*t*sum( (gamma.chain[i,]^2)/sigma_e.chain[i,] ) + 1 )
+    #aux.2 = y.hat*matrix(gamma.chain[i,], nrow = ages, ncol = t)
+    aux.2 = y.hat*matrix((gamma.chain[i,]/sigma_e.chain[i,]), nrow = ages, ncol = t)
+    #mu1 = ( sigma0*sum(aux.2) + sigma_e.chain[i]*mu0 )/aux
+    mu1 = ( sigma0*sum(aux.2) + mu0 )/aux
+    #sigma1 = (sigma_e.chain[i]*sigma0)/aux
+    sigma1 = sigma0/aux
     
     theta.chain[i,j] <- rnorm(1, mu1, sqrt(sigma1))
   }
-  
-  theta.chain[i,] <- theta.chain[i,] - mean(theta.chain[i,])
-
   
   
 }
@@ -332,7 +351,7 @@ theta.est <- apply(theta.chain[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 
 
 sigma_w.est <- quantile(sigma_w.chain[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
 sigma_t.est <- quantile(sigma_t.chain[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
-sigma_e.est <- quantile(sigma_e.chain[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
+sigma_e.est <- apply(sigma_e.chain[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975))
 nu.est <- quantile(nu.chain[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
 #lambda.est <- quantile(lambda.chain[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
 
@@ -424,12 +443,17 @@ theta.est
 #lambda.est
 
 #par(mfrow = c(1, 3))
-plot.ts(nu.chain[seq(bn, it, by = thin)], ylim = c(-0.55, -0.7))
+plot.ts(nu.chain[seq(bn, it, by = thin)])
 abline(h = nu, col = 2)
 plot.ts(sigma_w.chain[seq(bn, it, by = thin)])
 abline(h = sigma_w, col = 2)
-plot.ts(sigma_e.chain[seq(bn, it, by = thin)])
-abline(h = sigma_e, col = 2)
+
+plot(sigma_e, ylim = c(0, 1))
+lines(sigma_e.est[2,])
+lines(sigma_e.est[1,], col = "blue", lty = 2)
+lines(sigma_e.est[3,], col = "blue", lty = 2)
+### ok
+
 plot.ts(sigma_t.chain[seq(bn, it, by = thin)])
 abline(h = sigma_t, col = 2)
 
@@ -460,8 +484,7 @@ fit <- list(kappa = kappa.chain,
             #lambda = lambda.chain,
             nu = nu.chain)
 
-saveRDS(fit, "spatialLCfit_nolambda.RDS")
-### sigma_t estranho
+saveRDS(fit, "spatialLCfit_agesigmae.RDS")
 ### estimation (n-steps) #age-time-spatial parameters (gamma + theta constraint)----
 it = 20000 #iterations
 kappa.chain <- matrix(NA, nrow = it, ncol = t)
