@@ -199,6 +199,9 @@ blc_missing <- function(Y, prior = NULL, init = NULL, M = 5000, bn = 4000, thin 
   chain$kappa <- matrix(nrow = N, ncol = M)
   chain$input <- matrix(nrow = nrow(ind_missing), ncol = M)
   
+  chain$mt <- matrix(nrow = N, ncol = M)
+  chain$Ct <- matrix(nrow = N, ncol = M)
+  
   pb$tick() ## Progress Bar
   
   # Initialize chains
@@ -224,6 +227,10 @@ blc_missing <- function(Y, prior = NULL, init = NULL, M = 5000, bn = 4000, thin 
     kdf <- kd.filter(y_obs, prior$m0, prior$C0, diag(1/chain$phiv[ ,i-1]),
                      1/chain$phiw[i-1], chain$beta[ ,i-1], 1,
                      chain$alpha[ ,i-1], chain$theta[i-1])
+    
+    chain$mt[, i] <- kdf$m
+    chain$Ct[, i] <- kdf$C
+    
     kds <- kd.smoother(y_obs, kdf, 1/chain$phiw[i-1], 1, chain$theta[i-1])
     chain$kappa[ ,i] <- rnorm(N, kds$s[1, ], sqrt(kds$S[1,1, ]))
     
@@ -260,7 +267,7 @@ blc_missing <- function(Y, prior = NULL, init = NULL, M = 5000, bn = 4000, thin 
     
     # Missing
     for(j in 1:nrow(ind_missing)){
-      loc <- c(ind_missing[j,1] %% ages,
+      loc <- c(ind_missing[j,1],
                ind_missing[j,2])
       
       aux = chain$alpha[loc[1], i] + (chain$beta[loc[1], i] * chain$kappa[loc[2], i])

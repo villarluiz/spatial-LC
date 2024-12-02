@@ -127,17 +127,16 @@ theta <- c(theta, theta_n)
 ### alpha, beta and kappa ----
 ## acho que tem constraint demais...
 set.seed(14)
-alpha <- runif(ages, -6, -1)
-#alpha <- readRDS("sim_ab.RDS")$alp
+alpha <- readRDS("sim_ab.RDS")$alp
 # #alpha <- alpha/sum(alpha)
-beta <- runif(ages, 0, 0.1)
-#beta <- readRDS("sim_ab.RDS")$bet
+#beta <- runif(ages, 0, 0.1)
+beta <- readRDS("sim_ab.RDS")$bet
 gamma <- runif(ages, 0, 0.1)
 #beta <- beta/sum(beta)
 
 
 
-kappa0 <- 10
+kappa0 <- 1
 kappa <- rep(NA, t)
 nu <- -0.95
 
@@ -146,19 +145,21 @@ kappa[1] <- nu + kappa0 + rnorm(1, 0, sqrt(0.35))
 for(k in 2:t){
   kappa[k] <- nu + kappa[k-1] + rnorm(1, 0, sqrt(0.35))
 }
+inc <- (kappa[1] - kappa[t]) / (t-1)
 
-alpha <- alpha + beta*mean(kappa) + gamma*mean(theta)
+#alpha <- alpha + beta*mean(kappa) + gamma*mean(theta)
 theta <- (theta - mean(theta))*sum(gamma)
 #inclination <- (kappa[1] - kappa[t])/(t-1)
-kappa <- (kappa - mean(kappa))*sum(beta)
+kappa <- (kappa - mean(kappa))/inc
 #kappa <- aux.k[2:(t+1)]; kappa0 <- aux.k[1]
-beta <- beta/sum(beta)
+#beta <- beta*inc
 gamma <- gamma/sum(gamma)
 
 
 m0 <- 0; C0 <- 100
-sigma_e = runif(ages, min = 0, max = 1)
-sigma_w = 0.35
+#sigma_e = runif(ages, min = 0, max = 1)
+sigma_e = 0.2
+sigma_w = 4
 
 ### aux ----
 A <- kronecker(rep(1, n), alpha)
@@ -342,17 +343,17 @@ for(i in 2:it){
 ### chain treatment
 bn = 10000
 thin = 5
-kappa.est <- apply(kappa.chain[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975), na.rm = T)
+kappa.est <- apply(fit$kappa[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975), na.rm = T)
 
-alpha.est <- apply(alpha.chain[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975), na.rm = T)
-beta.est <- apply(beta.chain[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975), na.rm = T)
-gamma.est <- apply(gamma.chain[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975), na.rm = T)
-theta.est <- apply(theta.chain[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975), na.rm = T)
+alpha.est <- apply(fit$alpha[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975), na.rm = T)
+beta.est <- apply(fit$beta[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975), na.rm = T)
+gamma.est <- apply(fit$gamma[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975), na.rm = T)
+theta.est <- apply(fit$theta[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975), na.rm = T)
 
-sigma_w.est <- quantile(sigma_w.chain[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
-sigma_t.est <- quantile(sigma_t.chain[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
-sigma_e.est <- apply(sigma_e.chain[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975))
-nu.est <- quantile(nu.chain[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
+sigma_w.est <- quantile(fit$sigma_w[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
+sigma_t.est <- quantile(fit$sigma_t[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
+sigma_e.est <- apply(fit$sigma_e[seq(bn, it, by = thin), ], 2, quantile, c(0.025, 0.5, 0.975))
+nu.est <- quantile(fit$nu[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
 #lambda.est <- quantile(lambda.chain[seq(bn, it, by = thin)], c(0.025, 0.5, 0.975))
 
 #### age-time parameters plot
@@ -394,16 +395,16 @@ lines(1:n, theta.est[3,], lty = 2, col = "blue")
 # acf(kappa.chain[bn:it ,10])
 
 plot.ts(alpha.chain[seq(bn, it, by = thin),1])
-plot.ts(alpha.chain[bn:it ,4])
-plot.ts(alpha.chain[bn:it ,8])
-plot.ts(alpha.chain[bn:it ,12])
+plot.ts(fit$alpha[bn:it ,4])
+plot.ts(fit$alpha[bn:it ,8])
+plot.ts(fit$alpha[bn:it ,12])
 
 acf(alpha.chain[bn:it ,1])
 acf(alpha.chain[bn:it ,4])
 acf(alpha.chain[bn:it ,8])
 acf(alpha.chain[bn:it ,12])
 
-plot.ts(beta.chain[bn:it, 1])
+plot.ts(fit$beta[bn:it, 1])
 plot.ts(beta.chain[bn:it, 4])
 plot.ts(beta.chain[bn:it, 8])
 plot.ts(beta.chain[bn:it, 12])
@@ -413,7 +414,7 @@ acf(beta.chain[bn:it, 4])
 acf(beta.chain[bn:it, 8])
 acf(beta.chain[bn:it, 12])
 
-plot.ts(gamma.chain[bn:it, 1])
+plot.ts(fit$gamma[bn:it, 1])
 plot.ts(gamma.chain[bn:it, 4])
 plot.ts(gamma.chain[bn:it, 8])
 plot.ts(gamma.chain[bn:it, 12])
@@ -423,7 +424,7 @@ acf(gamma.chain[bn:it, 4])
 acf(gamma.chain[bn:it, 8])
 acf(gamma.chain[bn:it, 12])
 
-plot.ts(theta.chain[bn:it, 1])
+plot.ts(fit$theta[bn:it, 1])
 plot.ts(theta.chain[bn:it, 4])
 plot.ts(theta.chain[bn:it, 8])
 plot.ts(theta.chain[bn:it, 12])
@@ -485,6 +486,7 @@ fit <- list(kappa = kappa.chain,
             nu = nu.chain)
 
 saveRDS(fit, "spatialLCfit_agesigmae.RDS")
+fit <- readRDS("spatialLCfit_agesigmae.RDS")
 ### estimation (n-steps) #age-time-spatial parameters (gamma + theta constraint)----
 it = 20000 #iterations
 kappa.chain <- matrix(NA, nrow = it, ncol = t)
@@ -1050,3 +1052,52 @@ fit <- list(kappa = kappa.chain,
             nu = nu.chain)
 
 saveRDS(fit, "spatialLCfit_nolambda.RDS")
+
+
+##### MISSING COM DADO SIMULADO E FUNCAO SBLC_MISSING ----
+# source("sblc_fun.R")
+# source("sffbs_fun_k0.R")
+# fit1 <- sblc(y_obs, ages, t, n, m0, C0, Mi, Wi, it = 2000, bn = 1000, thin = 1)
+# median(fit1$nu.chain)
+# nu
+
+source("sblc_fun.R")
+source("sffbs_fun.R")
+fit2 <- sblc_2(y_obs, ages, t, n, m0, C0, Mi, Wi, it = 2000, bn = 1000, thin = 1)
+median(fit2$nu.chain)
+plot.ts(fit2$nu.chain)
+plot.ts(fit2$kappa.chain[,1])
+plot.ts(fit2$sigma_w.chain)
+median(fit2$sigma_w.chain) ### alto
+median(fit2$sigma_t.chain)  ###baixo
+median(fit2$sigma_e.chain) ##bem estimado
+
+
+# fit3 <- sblc_3(y_obs, ages, t, n, m0, C0, Mi, Wi, it = 2000, bn = 1000, thin = 1)
+# median(fit3$nu.chain)
+# plot.ts(fit3$nu.chain)
+# plot.ts(fit3$kappa.chain[,1])
+# plot.ts(fit3$sigma_w.chain)
+# nu    ###ruim mudar de lugar
+
+source("fitted_sblc.R")
+fitted2 <- fitted_sblc(fit2)
+aux.qx2 <- 1 - exp(-exp(fitted2$mean))
+y_qx <- 1 - exp(-exp(y_obs))
+res <- ( (y_qx - aux.qx2)^2)/aux.qx2
+
+fitted3 <- fitted_sblc(fit3)
+aux.qx3 <- 1 - exp(-exp(fitted3$mean))
+res2 <- ( (y_qx - aux.qx3)^2)/aux.qx3
+### fit 3 com maior residuo 
+
+###bons valores, sigma_w e kappa nao convergiram mt bem, k0 teve desempenho pior
+
+### MISSING VS INPUT MISSING
+aux <- cbind(sample(1:195, 100, replace=T),
+             sample(1:40, 100, replace = T))
+y_obs[aux] <- NA
+
+fit3 <- sblc_missing(y_obs, ages, t, n, m0, C0, Mi, Wi, it = 3000, bn = 1500, thin = 1)
+median(fit3$nu.chain)
+nu

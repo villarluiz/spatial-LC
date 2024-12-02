@@ -21,6 +21,7 @@ fitted_sblc <- function(object, prob = 0.95, ...) {
 	upper <- apply(fits, c(1,2), quantile, 1 - alpha/2)
 	lower <- apply(fits, c(1,2), quantile, alpha/2)
 
+	#list(mean = mean, upper = upper, lower = lower)
 	list(mean = mean, upper = upper, lower = lower)
 }
 
